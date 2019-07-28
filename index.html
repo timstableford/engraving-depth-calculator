@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <link rel="stylesheet" type="text/css" href="semantic/dist/semantic.min.css">
+        <script src="jquery-3.1.1.min.js"></script>
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/semantic-ui@2.4.2/dist/semantic.min.css">
+        <script src="https://cdn.jsdelivr.net/npm/semantic-ui@2.4.2/dist/semantic.min.js"></script>
+
+        <title>Engraving Depth Calculator</title>
+
+        <style>
+            .padded-important {
+                padding: 1rem !important;
+                margin: 0rem !important;
+            }
+
+            .left-column {
+                border-right: 1px rgba(0, 0, 0, 0.5) solid;
+            }
+
+            .max-size {
+                height: calc(100vh - 4rem);
+            }
+
+            #engraver-form {
+                padding-top: 1rem;
+            }
+
+            .ui.button {
+                margin-top: 1rem;
+                width: 100%;
+            }
+        </style>
+    </head>
+
+    <body>
+        <div class="ui grid max-size padded-important">
+            <div class="four wide column left-column">
+                <form class="ui form" id="copper-form">
+                    <div class="field">
+                        <label>Copper Weight (oz)</label>
+                        <input type="number" name="copper-weight" placeholder="Copper Weight (oz)" value="1">
+                    </div>
+                    <div class="ui message">
+                        <div class="header">Copper Thickness</div>
+                        <div id="copper-thickness-display"></div>
+                    </div>
+                </form>
+
+                <form class="ui form" id="engraver-form">
+                    <div class="field">
+                        <label>Bit Angle (degrees)</label>
+                        <input type="number" name="bit-angle" placeholder="Bit Angle (degrees)" value="10">
+                    </div>
+                    <div class="field">
+                        <label>Tip Diameter (mm)</label>
+                        <input type="number" name="tip-diameter" placeholder="Tip Diameter (mm)" value="0.1">
+                    </div>
+                    <div class="field">
+                        <label>Copper Thickness Depth Multiplier</label>
+                        <input type="number" name="cut-depth-mult" value="2">
+                    </div>
+                    <div class="ui message">
+                        <div class="header">Cut Depth</div>
+                        <div id="cut-depth-display"></div>
+                    </div>
+                    <div class="field">
+                        <label>Width of Cut (mm)</label>
+                        <input type="number" name="cut-width" placeholder="Width of Cut (mm)">
+                    </div>
+                </form>
+                <div class="ui button primary" id="reset-button">
+                    Reset To Defaults
+                </div>
+            </div>
+            <div class="twelve wide column ui">
+                <canvas class="max-size" id="drill-canvas"></canvas>
+            </div>
+        </div>
+    </body>
+
+    <script>
+        const model = {};
+
+        function updateEngraver() {
+            const canvas = document.getElementById('drill-canvas');
+            console.log(canvas.parentElement);
+            const dimensions = canvas.parentElement.clientWidth > canvas.parentElement.clientHeight ? canvas.parentElement.clientHeight : canvas.parentElement.clientWidth;
+            canvas.width = dimensions;
+            canvas.height = dimensions;
+            console.log(canvas.width, canvas.height);
+            const ctx = canvas.getContext('2d');
+            ctx.imageSmoothingEnabled = false;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            ctx.font = `normal ${height(2)}px serif`;
+            ctx.textAlign = 'center';
+
+            function width(pc) {
+                return (pc / 100) * canvas.width;
+            }
+
+            function height(pc) {
+                return (pc / 100) * canvas.height;
+            }
+
+            // Tip angle arc (/2)
+            const angle = Math.atan(30 / 65);
+            const widthTop = 45 * Math.tan(angle);
+            const widthBottom = 25 * Math.tan(angle);
+
+            // Draw the main body
+            {
+                ctx.save();
+                ctx.beginPath();
+                ctx.moveTo(width(20), 0); // Top left
+                ctx.lineTo(width(20), height(10)); // Left down line
+                ctx.lineTo(width(50 - widthBottom), height(50)); // Triangle left
+                ctx.lineTo(width(50 + widthBottom), height(50)); // Triangle right
+                //ctx.lineTo(width(50), height(75)); // Triangle tip
+                ctx.lineTo(width(80), height(10));
+                ctx.lineTo(width(80), height(0));
+                ctx.closePath();
+                ctx.fillStyle = 'rgba(47, 175, 238, 1)';
+                ctx.fill();
+                ctx.restore();
+                ctx.fillText('Tip Diameter', width(50), height(49));
+                ctx.fillText($('#engraver-form :input[name=tip-diameter]').first().val() + 'mm', width(50), height(52));
+            }
+
+            // Dotted tip
+            {
+                ctx.save();
+                ctx.beginPath();
+                ctx.moveTo(width(50 - widthBottom), height(50));
+                ctx.lineTo(width(50), height(75));
+                ctx.lineTo(width(50 + widthBottom), height(50));
+                ctx.closePath();
+                ctx.setLineDash([5, 3]);
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            // Tip arc
+            {
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(width(50), height(75), height(5), - angle - Math.PI / 2, angle - Math.PI / 2);
+                ctx.stroke();
+                ctx.textAlign = 'left';
+                ctx.fillText(`Bit Angle (${$('#engraver-form :input[name=bit-angle]').first().val()}°)`, width(52), height(74));
+                ctx.restore();
+            }
+
+
+            // Depth of cut
+            {
+                ctx.save();
+                ctx.strokeStyle = 'black';
+                ctx.fillStyle = 'black';
+
+                // Top horizontal line
+                ctx.beginPath();
+                ctx.moveTo(width(20), height(30));
+                ctx.lineTo(width(50 - widthTop), height(30));
+                ctx.stroke();
+                // Arrow just below it
+                ctx.beginPath();
+                ctx.moveTo(width(20.5), height(30));
+                ctx.lineTo(width(21), height(31));
+                ctx.lineTo(width(20), height(31));
+                ctx.closePath();
+                ctx.fill();
+                // Line to the text
+                ctx.beginPath();
+                ctx.moveTo(width(20.5), height(30));
+                ctx.lineTo(width(20.5), height(36));
+                ctx.stroke();
+
+                // Bottom horizontal line
+                ctx.beginPath();
+                ctx.moveTo(width(50 - widthBottom), height(50));
+                ctx.lineTo(width(20), height(50));
+                ctx.stroke();
+                // Arrow just above it
+                ctx.beginPath();
+                ctx.moveTo(width(20.5), height(50));
+                ctx.lineTo(width(21), height(49));
+                ctx.lineTo(width(20), height(49));
+                ctx.closePath();
+                ctx.fill();
+                // Line to the text
+                ctx.beginPath();
+                ctx.moveTo(width(20.5), height(50));
+                ctx.lineTo(width(20.5), height(44));
+                ctx.stroke();
+
+                // Text
+                ctx.fillText('Depth of Cut', width(20.5), height(39));
+                ctx.fillText(`${model.cutDepth.toFixed(3)}mm`, width(20.5), height(42));
+                ctx.restore();
+            }
+
+            // Width of Cut
+            {
+                ctx.save();
+                ctx.strokeStyle = 'black';
+                ctx.fillStyle = 'black';
+
+                // Left vertical line
+                ctx.beginPath();
+                ctx.moveTo(width(50 - widthTop), height(30));
+                ctx.lineTo(width(50 - widthTop), height(90));
+                ctx.stroke();
+                // Arrow just right of it
+                ctx.beginPath();
+                ctx.moveTo(width(50 - widthTop), height(89.5));
+                ctx.lineTo(width(50 - widthTop + 1), height(89));
+                ctx.lineTo(width(50 - widthTop + 1), height(90));
+                ctx.closePath();
+                ctx.fill();
+                // Line to the text
+                ctx.beginPath();
+                ctx.moveTo(width(50 - widthTop), height(89.5));
+                ctx.lineTo(width(40), height(89.5));
+                ctx.stroke();
+
+                // Bottom horizontal line
+                ctx.beginPath();
+                ctx.moveTo(width(50 + widthTop), height(30));
+                ctx.lineTo(width(50 + widthTop), height(90));
+                ctx.stroke();
+                // Arrow just to the left
+                ctx.beginPath();
+                ctx.moveTo(width(50 + widthTop), height(89.5));
+                ctx.lineTo(width(50 + widthTop - 1), height(89));
+                ctx.lineTo(width(50 + widthTop - 1), height(90));
+                ctx.closePath();
+                ctx.fill();
+                // Line to the text
+                ctx.beginPath();
+                ctx.moveTo(width(50 + widthTop), height(89.5));
+                ctx.lineTo(width(60), height(89.5));
+                ctx.stroke();
+
+                // Text
+                ctx.fillText('Width of Cut', width(50), height(88));
+                ctx.fillText(Number($('#engraver-form :input[name=cut-width]').first().val()).toFixed(3) + 'mm', width(50), height(92));
+                ctx.restore();
+            }
+        }
+
+        function recalculate() {
+            const cutDepthMult = Number($('#engraver-form :input[name=cut-depth-mult]').first().val());
+            model.cutDepth = cutDepthMult * model.copperThickness;
+            $('#cut-depth-display').html(`${model.cutDepth}mm`);
+            updateEngraver();
+        }
+
+        function updateCutDepth() {
+            const bitAngle = Number($('#engraver-form :input[name=bit-angle]').first().val()) / 180 * Math.PI;
+            const tipDiameter = Number($('#engraver-form :input[name=tip-diameter]').first().val());
+            const cutWidth = Number($('#engraver-form :input[name=cut-width]').first().val());
+
+            const cutDepthMult = (cutWidth - tipDiameter) / (2 * Math.tan(bitAngle / 2) * model.copperThickness);
+
+            $('#engraver-form :input[name=cut-depth-mult]').first().val(cutDepthMult);
+            recalculate();
+        }
+
+        function updateCutWidth() {
+            const bitAngle = Number($('#engraver-form :input[name=bit-angle]').first().val()) / 180 * Math.PI;
+            const tipDiameter = Number($('#engraver-form :input[name=tip-diameter]').first().val());
+            const cutDepthMult = Number($('#engraver-form :input[name=cut-depth-mult]').first().val());
+
+            const cutWidth = tipDiameter + 2 * Math.tan(bitAngle / 2) * cutDepthMult * model.copperThickness;
+            console.log('Cut width', bitAngle, tipDiameter, cutDepthMult, cutWidth);
+            $('#engraver-form :input[name=cut-width]').first().val(cutWidth);
+            recalculate();
+        }
+
+        $('#engraver-form :input[name=bit-angle]').first().on('input', updateCutWidth);
+        $('#engraver-form :input[name=tip-diameter]').first().on('input', updateCutWidth);
+        $('#engraver-form :input[name=cut-depth-mult]').first().on('input', updateCutWidth);
+        $('#engraver-form :input[name=cut-width]').first().on('input', updateCutDepth);
+
+        $('#reset-button').click(() => {
+            $('#engraver-form :input[name=bit-angle]').first().val(10);
+            $('#engraver-form :input[name=tip-diameter]').first().val(0.1);
+            $('#engraver-form :input[name=cut-depth-mult]').first().val(2);
+            $('#engraver-form :input[name=cut-width]').first().val('');
+            updateCutWidth();
+            updateCutDepth();
+            updateEngraver();
+        });
+
+        function updateThickness() {
+            const copperWeight = Number($('#copper-form :input[name=copper-weight]').first().val());
+            model.copperThickness = 0.0347 * copperWeight;
+            $('#copper-thickness-display').html(model.copperThickness + 'mm');
+            recalculate();
+            updateCutWidth();
+        }
+
+        $('#copper-form :input').each(function() {
+            $(this).on('input', updateThickness);
+        });
+        updateThickness();
+        if (!$('#cut-depth-display').html()) {
+            updateCutWidth();
+            updateCutDepth();
+        }
+    </script>
+
+</html>
